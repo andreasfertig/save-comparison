@@ -1,0 +1,129 @@
+// Copyright 2020 Andreas Fertig
+//
+// Base on a talk by Björn Fahller (https://www.youtube.com/watch?v=YUWuNpxZa5k)
+//
+// Distributed under an MIT license. See LICENSE for details
+
+#ifndef SAFE_COMPARISON_H
+#define SAFE_COMPARISON_H
+
+#include <type_traits>
+#include <utility>
+
+namespace safe_comparison {
+
+    template<typename T>
+    struct remove_cvref
+    {
+        using type = std::remove_cv_t<std::remove_reference_t<T>>;
+    };
+
+    template<typename T>
+    using remove_cvref_t = typename remove_cvref<T>::type;
+
+    template<typename T, typename...>
+    struct first_type
+    {
+        using type = remove_cvref_t<T>;
+    };
+
+    template<typename T, typename... Ts>
+    struct are_same
+    {
+        static constexpr bool value = std::conjunction_v<std::is_same<remove_cvref_t<T>, remove_cvref_t<Ts>>...>;
+    };
+
+    template<typename T, typename... Ts>
+    constexpr bool are_same_v = are_same<T, Ts...>::value;
+
+    template<typename... Ts>
+    struct is
+    {
+        using BaseType = typename first_type<Ts...>::type;
+
+        static constexpr auto SIZE = sizeof...(Ts);
+
+        static_assert(are_same_v<BaseType, Ts...>, "Only parameters of the same type are allowed.");
+
+        const BaseType values[SIZE];
+
+        constexpr is(Ts&&... ts)
+        : values{std::forward<Ts>(ts)...}
+        {
+        }
+
+        constexpr bool in_range(const BaseType& min, const BaseType& max) const
+        {
+            return compare(min, max, std::make_index_sequence<SIZE>{});
+        }
+
+        template<std::size_t... I>
+        constexpr bool compare(const BaseType& min, const BaseType& max, std::index_sequence<I...>) const
+        {
+            return (((min <= values[I]) && (values[I] <= max)) && ...);
+        }
+
+        template<std::size_t... I>
+        constexpr bool compare_equal(const BaseType& value, std::index_sequence<I...>) const
+        {
+            return ((value == values[I]) && ...);
+        }
+
+        constexpr bool equal(const BaseType& value) const
+        {
+            return compare_equal(value, std::make_index_sequence<SIZE>{});
+        }
+
+        constexpr bool        operator==(const BaseType& value) const { return equal(value); }
+        friend constexpr bool operator==(const BaseType& lhs, const is& rhs) { return rhs == lhs; }
+
+        constexpr bool        operator!=(const BaseType& value) const { return not equal(value); }
+        friend constexpr bool operator!=(const BaseType& lhs, const is& rhs) { return not(rhs == lhs); }
+
+        constexpr bool        operator>(const BaseType& value) const { return greater(value); }
+        friend constexpr bool operator>(const BaseType& lhs, const is& rhs) { return rhs < lhs; }
+
+        template<std::size_t... I>
+        constexpr bool compare_less(const BaseType& value, std::index_sequence<I...>) const
+        {
+            return ((value > values[I]) && ...);
+        }
+
+        constexpr bool less(const BaseType& value) const
+        {
+            return compare_less(value, std::make_index_sequence<SIZE>{});
+        }
+
+        constexpr bool        operator<(const BaseType& value) const { return less(value); }
+        friend constexpr bool operator<(const BaseType& lhs, const is& rhs) { return rhs > lhs; }
+
+        template<std::size_t... I>
+        constexpr bool compare_gt(const BaseType& value, std::index_sequence<I...>) const
+        {
+            return ((value <= values[I]) && ...);
+        }
+
+        constexpr bool gt(const BaseType& value) const { return compare_gt(value, std::make_index_sequence<SIZE>{}); }
+
+        constexpr bool        operator>=(const BaseType& value) const { return gt(value); }
+        friend constexpr bool operator>=(const BaseType& lhs, const is& rhs) { return rhs <= lhs; }
+
+        template<std::size_t... I>
+        constexpr bool compare_lt(const BaseType& value, std::index_sequence<I...>) const
+        {
+            return ((value >= values[I]) && ...);
+        }
+
+        constexpr bool lt(const BaseType& value) const { return compare_lt(value, std::make_index_sequence<SIZE>{}); }
+
+        constexpr bool        operator<=(const BaseType& value) const { return lt(value); }
+        friend constexpr bool operator<=(const BaseType& lhs, const is& rhs) { return rhs >= lhs; }
+    };
+
+    template<typename... Ts>
+    is(Ts&&...)->is<Ts&&...>;  // CTAD
+
+}  // namespace safe_comparison
+
+#endif /* SAFE_COMPARISON_H */
+
